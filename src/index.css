@@ -1,0 +1,44 @@
+:root {
+  --bg: #14080b;
+  --surface: #2a0710;
+  --ink: #f0dfd2;
+  --paper: #f6e2d0;
+  --moss: #8d1d31;
+  --clay: #6d0712;
+  --oat: #e8d2c0;
+  --font-display: "Baskerville", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+  --font-body: "Avenir Next", "Helvetica Neue", "Segoe UI", sans-serif;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--ink);
+  background: var(--bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    linear-gradient(180deg, rgba(19, 7, 10, 0.98), rgba(26, 7, 11, 1)),
+    var(--bg);
+}
+
+button,
+input,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
