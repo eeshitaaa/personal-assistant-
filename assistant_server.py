@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import re
 import sqlite3
+from html import unescape
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlparse
+from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
 
@@ -257,6 +260,26 @@ def current_quote() -> dict:
     return {"text": latest["quote_text"], "source": latest["source"], "updatedAt": latest["created_at"]}
 
 
+def fetch_json(url: str) -> dict:
+    request = Request(url, headers={"User-Agent": "personal-assistant-local-app"})
+    with urlopen(request, timeout=12) as response:
+        return json.loads(response.read().decode())
+
+
+def fetch_text(url: str) -> str:
+    request = Request(url, headers={"User-Agent": "personal-assistant-local-app"})
+    with urlopen(request, timeout=15) as response:
+        return response.read().decode(errors="ignore")
+
+
+def strip_html(raw: str) -> str:
+    text = re.sub(r"<script[\s\S]*?</script>", " ", raw, flags=re.IGNORECASE)
+    text = re.sub(r"<style[\s\S]*?</style>", " ", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = unescape(text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def rotate_quote(force: bool = False) -> dict:
     history = recent_quotes(limit=30)
     if history and not force:
@@ -315,6 +338,91 @@ def calendar_payload() -> dict:
             "Use the Connect Calendar action once OAuth is wired in.",
         ],
     }
+
+
+def search_web(query: str) -> dict:
+    try:
+        html = fetch_text(f"https://html.duckduckgo.com/html/?q={quote(query)}")
+        results = []
+        pattern = re.compile(
+            r'<a[^>]*class="result__a"[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>[\s\S]*?'
+            r'<a[^>]*class="result__snippet"[^>]*>(?P<snippet>.*?)</a>',
+            flags=re.IGNORECASE,
+        )
+        for match in pattern.finditer(html):
+            href = unescape(match.group("href"))
+            if "uddg=" in href:
+                href = unquote(href.split("uddg=", 1)[1].split("&", 1)[0])
+            title = strip_html(match.group("title"))
+            snippet = strip_html(match.group("snippet"))
+            if title and href:
+                domain = urlparse(href).netloc.replace("www.", "")
+                results.append(
+                    {
+                        "title": title,
+                        "url": href,
+                        "snippet": snippet,
+                        "domain": domain,
+                    }
+                )
+            if len(results) >= 6:
+                break
+        if results:
+            return {
+                "query": query,
+                "results": results,
+                "message": f"I found a few places to start for “{query}”. Pick the source you want.",
+            }
+    except Exception:
+        pass
+
+    return {
+        "query": query,
+        "results": [],
+        "message": "I couldn’t fetch live search results right now. Try a more specific search phrase.",
+    }
+
+
+def summarize_source(url: str, title: str, question: str = "") -> dict:
+    try:
+        try:
+            raw = fetch_text(f"https://r.jina.ai/http://{url.replace('https://', '').replace('http://', '')}")
+        except Exception:
+            raw = fetch_text(url)
+        text = strip_html(raw)
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        keywords = [word.lower() for word in re.findall(r"[A-Za-z0-9]+", question) if len(word) > 2]
+        picked = []
+        for sentence in sentences:
+            clean = sentence.strip()
+            if len(clean) < 40:
+                continue
+            if keywords:
+                hay = clean.lower()
+                if any(word in hay for word in keywords):
+                    picked.append(clean)
+            elif len(picked) < 3:
+                picked.append(clean)
+            if len(picked) >= 4:
+                break
+        if not picked:
+            picked = [sentence.strip() for sentence in sentences if len(sentence.strip()) > 40][:3]
+        answer = " ".join(picked)[:1400] or "I could open the source, but I couldn’t extract a useful summary."
+        return {
+            "title": title,
+            "url": url,
+            "answer": answer,
+            "source": f"Source: {title} — {url}",
+            "question": question,
+        }
+    except Exception:
+        return {
+            "title": title,
+            "url": url,
+            "answer": "I couldn’t read that source properly. Try another result or open the link directly.",
+            "source": f"Source: {title} — {url}",
+            "question": question,
+        }
 
 
 def briefing_payload(reminders: list[dict], checkins: list[dict], quote: dict) -> dict:
@@ -395,14 +503,7 @@ class Handler(BaseHTTPRequestHandler):
             if not query:
                 self._send(400, {"message": "Add a query first."})
                 return
-            self._send(
-                200,
-                {
-                    "summary": f"Search is ready for “{query}”, but live web search is still a placeholder in this local build.",
-                    "source": "Local placeholder. SerpAPI plus OpenAI or Claude still needs wiring.",
-                    "message": "Search layout is ready. Live answers will appear here once external search is connected.",
-                },
-            )
+            self._send(200, search_web(query))
             return
         self._send(404, {"message": "Not found"})
 
@@ -456,6 +557,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(400, {"message": "Quote text is required."})
                 return
             self._send(200, set_quote(text, source))
+            return
+
+        if parsed.path == "/api/search/source":
+            url = payload.get("url", "").strip()
+            title = payload.get("title", "").strip() or "Selected source"
+            question = payload.get("question", "").strip()
+            if not url:
+                self._send(400, {"message": "A source URL is required."})
+                return
+            self._send(200, summarize_source(url, title, question))
             return
 
         if parsed.path == "/api/water-settings":
@@ -556,8 +667,12 @@ class Handler(BaseHTTPRequestHandler):
         return
 
 
+class ReusableThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
 if __name__ == "__main__":
     init_db()
-    server = ThreadingHTTPServer(("127.0.0.1", 8766), Handler)
+    server = ReusableThreadingHTTPServer(("127.0.0.1", 8766), Handler)
     print("Assistant server running on http://127.0.0.1:8766")
     server.serve_forever()

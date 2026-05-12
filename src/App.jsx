@@ -11,6 +11,7 @@ const emptyDraft = {
   checkinText: '',
   checkinTime: '09:00',
   searchQuery: '',
+  searchFollowUp: '',
   customQuote: '',
   customQuoteSource: '',
   noteText: '',
@@ -25,10 +26,21 @@ function getGreeting() {
   return 'Good evening'
 }
 
+function formatTime12h(value) {
+  if (!value) return ''
+  const [hoursText, minutes] = value.split(':')
+  const hours = Number(hoursText)
+  const suffix = hours >= 12 ? 'PM' : 'AM'
+  const hour12 = hours % 12 || 12
+  return `${hour12}:${minutes} ${suffix}`
+}
+
 function App() {
   const [state, setState] = useState(null)
   const [draft, setDraft] = useState(emptyDraft)
   const [searchResult, setSearchResult] = useState(null)
+  const [selectedSource, setSelectedSource] = useState(null)
+  const [sourceSummary, setSourceSummary] = useState(null)
   const [message, setMessage] = useState('')
   const [loading, setLoading] = useState(true)
 
@@ -196,7 +208,28 @@ function App() {
     const response = await fetch(`${apiBase}/search?q=${encodeURIComponent(draft.searchQuery.trim())}`)
     const payload = await response.json()
     setSearchResult(payload)
+    setSelectedSource(null)
+    setSourceSummary(null)
     setMessage(payload.message || 'Search finished.')
+  }
+
+  async function inspectSource(source, question = '') {
+    setSelectedSource(source)
+    setSourceSummary({ answer: 'Pulling details from this source...', source: `Source: ${source.title}` })
+    const payload = await post('/search/source', {
+      url: source.url,
+      title: source.title,
+      question,
+    })
+    setSourceSummary(payload)
+    setMessage(question ? 'Here’s what I found in that source.' : 'Source summary ready.')
+  }
+
+  function clearSearch() {
+    setSearchResult(null)
+    setSelectedSource(null)
+    setSourceSummary(null)
+    setDraft((current) => ({ ...current, searchFollowUp: '' }))
   }
 
   async function deleteReminder(reminderId) {
@@ -246,6 +279,12 @@ function App() {
     loadState()
   }
 
+  async function completeProject(projectId) {
+    const result = await patch(`/projects/${projectId}`, { status: 'completed' })
+    setMessage(result.message)
+    loadState()
+  }
+
   async function togglePermission(name, enabled) {
     const result = await patch(`/permissions/${name}`, { enabled })
     setMessage(result.message)
@@ -274,20 +313,6 @@ function App() {
           <p className="lede">
             Ask something, add a reminder, or check what still needs to get done today.
           </p>
-          <div className="hero-search">
-            <input
-              value={draft.searchQuery}
-              onChange={(event) => setDraft((current) => ({ ...current, searchQuery: event.target.value }))}
-              placeholder="Ask a question, search a link, check a timing"
-            />
-            <button className="primary" onClick={handleSearch}>Search</button>
-          </div>
-          {searchResult && (
-            <div className="search-result hero-result">
-              <p>{searchResult.summary}</p>
-              <p className="source-line">{searchResult.source}</p>
-            </div>
-          )}
           <div className="assistant-strip">
             <div className="assistant-chip">
               <span>Next reminder</span>
@@ -321,6 +346,78 @@ function App() {
             <span className="swatch ink" />
           </div>
         </div>
+      </section>
+
+      <section className="search-band panel">
+        <div className="search-band-head">
+          <div>
+            <p className="section-tag">Search</p>
+            <h2>Ask a question, compare sources, then open the one you want.</h2>
+          </div>
+          {searchResult && (
+            <button className="ghost close-search" onClick={clearSearch}>Close search</button>
+          )}
+        </div>
+        <div className="hero-search search-band-form">
+          <input
+            value={draft.searchQuery}
+            onChange={(event) => setDraft((current) => ({ ...current, searchQuery: event.target.value }))}
+            placeholder="Ask a question, search a link, check a timing"
+          />
+          <button className="primary" onClick={handleSearch}>Search</button>
+        </div>
+        {searchResult && (
+          <div className="search-result hero-result">
+            <p>{searchResult.message}</p>
+            {searchResult.results?.length > 0 && (
+              <div className="search-sources">
+                {searchResult.results.map((result) => (
+                  <div className="source-card" key={result.url}>
+                    <div>
+                      <strong>{result.title}</strong>
+                      <span>{result.domain}</span>
+                      <p>{result.snippet}</p>
+                    </div>
+                    <div className="action-row">
+                      <button className="ghost" onClick={() => inspectSource(result)}>Use this source</button>
+                      <a className="source-link" href={result.url} target="_blank" rel="noreferrer">
+                        <span>Open source</span>
+                        <small>{result.domain}</small>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {selectedSource && (
+              <div className="source-workspace">
+                <div className="source-head">
+                  <strong>{selectedSource.title}</strong>
+                  <span>{selectedSource.domain}</span>
+                </div>
+                <div className="field-row">
+                  <input
+                    value={draft.searchFollowUp}
+                    onChange={(event) => setDraft((current) => ({ ...current, searchFollowUp: event.target.value }))}
+                    placeholder="Ask about this source"
+                  />
+                  <button
+                    className="primary"
+                    onClick={() => inspectSource(selectedSource, draft.searchFollowUp.trim())}
+                  >
+                    Ask
+                  </button>
+                </div>
+                {sourceSummary && (
+                  <div className="search-answer">
+                    <p>{sourceSummary.answer}</p>
+                    <p className="source-line">{sourceSummary.source}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="grid overview-grid">
@@ -389,7 +486,7 @@ function App() {
               <div className={`list-card ${item.isDoneToday ? 'done-card' : ''}`} key={item.id}>
                 <div>
                   <strong>{item.text}</strong>
-                  <span>{item.time_of_day} IST {item.isDoneToday ? '• done today' : '• still open'}</span>
+                  <span>{formatTime12h(item.time_of_day)} IST • {item.isDoneToday ? 'done today' : 'still open'}</span>
                 </div>
                 <div className="action-row">
                   <button className="ghost" onClick={() => markCheckinDone(item.id)}>Done</button>
@@ -424,7 +521,7 @@ function App() {
 
         <article className="panel quote-card">
           <p className="section-tag">Quote</p>
-          <h2>Refreshes every 3 to 4 hours, or whenever you choose another one.</h2>
+          <h2>Pick the line you want to keep close today.</h2>
           <blockquote>{currentQuote.text}</blockquote>
           <p className="source-line">Source: {currentQuote.source}</p>
           <div className="action-row">
@@ -434,12 +531,10 @@ function App() {
             <input
               value={draft.customQuote}
               onChange={(event) => setDraft((current) => ({ ...current, customQuote: event.target.value }))}
-              placeholder="Paste a quote you want to keep using"
             />
             <input
               value={draft.customQuoteSource}
               onChange={(event) => setDraft((current) => ({ ...current, customQuoteSource: event.target.value }))}
-              placeholder="Source or note"
             />
             <button className="ghost" onClick={saveCustomQuote}>Use this quote</button>
           </div>
@@ -500,11 +595,19 @@ function App() {
               <div className="list-card" key={project.id}>
                 <div>
                   <strong>{project.name}</strong>
-                  <span>{project.detail || 'No detail yet'} • {project.status}</span>
+                  <span className="project-detail">{project.detail || 'No detail yet'}</span>
+                  <span className="project-status">{project.status}</span>
                 </div>
-                <button className="ghost" onClick={() => toggleProject(project.id, project.status)}>
-                  {project.status === 'active' ? 'Pause' : 'Resume'}
-                </button>
+                <div className="action-row">
+                  {project.status !== 'completed' && (
+                    <button className="ghost" onClick={() => completeProject(project.id)}>Done</button>
+                  )}
+                  {project.status !== 'completed' && (
+                    <button className="ghost" onClick={() => toggleProject(project.id, project.status)}>
+                      {project.status === 'active' ? 'Pause' : 'Resume'}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
@@ -521,18 +624,6 @@ function App() {
                   <strong>{step}</strong>
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="permission-row">
-            {Object.entries(state.permissions).map(([name, enabled]) => (
-              <button
-                key={name}
-                className={`permission-chip ${enabled ? 'enabled' : ''}`}
-                onClick={() => togglePermission(name, !enabled)}
-              >
-                <span>{name}</span>
-                <strong>{enabled ? 'On' : 'Off'}</strong>
-              </button>
             ))}
           </div>
         </article>

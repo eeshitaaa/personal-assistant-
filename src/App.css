@@ -18,6 +18,7 @@
 }
 
 .hero,
+.search-band,
 .overview-grid,
 .main-grid,
 .status-bar {
@@ -32,6 +33,27 @@
   margin-bottom: 26px;
   position: relative;
   overflow: hidden;
+}
+
+.search-band {
+  padding: 24px;
+  margin-bottom: 22px;
+}
+
+.search-band-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.search-band-form {
+  margin-top: 0;
+}
+
+.close-search {
+  white-space: nowrap;
 }
 
 .panel {
@@ -175,6 +197,73 @@ p {
 
 .hero-result {
   margin-top: 14px;
+}
+
+.search-sources {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.source-card,
+.source-workspace,
+.search-answer {
+  padding: 16px;
+  border-radius: 18px;
+  background: rgba(255, 247, 240, 0.05);
+  border: 1px solid rgba(255, 232, 214, 0.08);
+}
+
+.source-card strong,
+.source-head strong {
+  display: block;
+  color: var(--paper);
+}
+
+.source-card span,
+.source-head span {
+  display: block;
+  margin-top: 6px;
+  color: rgba(255, 222, 205, 0.66);
+}
+
+.source-card p {
+  margin: 10px 0 0;
+  color: rgba(255, 233, 220, 0.78);
+  line-height: 1.5;
+}
+
+.source-workspace {
+  margin-top: 14px;
+}
+
+.source-head {
+  margin-bottom: 14px;
+}
+
+.search-answer {
+  margin-top: 14px;
+}
+
+.source-link {
+  min-width: 142px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(255, 232, 214, 0.08);
+  background: linear-gradient(180deg, rgba(245, 227, 211, 0.12), rgba(255, 244, 235, 0.05));
+  text-decoration: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.source-link span {
+  color: var(--paper);
+  font-size: 0.92rem;
+}
+
+.source-link small {
+  color: rgba(255, 222, 205, 0.66);
 }
 
 .hero-board {
@@ -481,6 +570,20 @@ blockquote,
   color: rgba(255, 222, 205, 0.66);
 }
 
+.project-detail,
+.project-status {
+  display: block;
+}
+
+.project-detail {
+  margin-top: 8px;
+}
+
+.project-status {
+  margin-top: 8px;
+  text-transform: capitalize;
+}
+
 blockquote {
   margin: 18px 0 12px;
   font-family: var(--font-display);
@@ -517,6 +620,7 @@ blockquote {
 
 @media (max-width: 1100px) {
   .hero,
+  .search-band-head,
   .overview-grid {
     grid-template-columns: 1fr;
   }
@@ -545,6 +649,7 @@ blockquote {
 
   .hero-search,
   .assistant-strip,
+  .search-band-head,
   .hero-board,
   .mini-columns,
   .field-row,
