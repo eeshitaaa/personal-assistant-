@@ -1,7 +1,18 @@
 import { useEffect, useState } from 'react'
 import './App.css'
+import {
+  loadStaticState,
+  staticDelete,
+  staticPatch,
+  staticPost,
+  staticQuote,
+  staticSearch,
+} from './staticAssistant'
 
 const apiBase = 'http://127.0.0.1:8766/api'
+const isLocalMode =
+  typeof window !== 'undefined' &&
+  (window.location.hostname === '127.0.0.1' || window.location.hostname === 'localhost')
 
 const emptyDraft = {
   dailyPlan: '',
@@ -47,8 +58,9 @@ function App() {
   async function loadState() {
     setLoading(true)
     try {
-      const response = await fetch(`${apiBase}/state`)
-      const payload = await response.json()
+      const payload = isLocalMode
+        ? await fetch(`${apiBase}/state`).then((response) => response.json())
+        : await loadStaticState()
       setState(payload)
       setDraft((current) => ({
         ...current,
@@ -67,6 +79,9 @@ function App() {
   }, [])
 
   async function post(path, body) {
+    if (!isLocalMode) {
+      return staticPost(path, body)
+    }
     const response = await fetch(`${apiBase}${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -76,6 +91,9 @@ function App() {
   }
 
   async function patch(path, body) {
+    if (!isLocalMode) {
+      return staticPatch(path, body)
+    }
     const response = await fetch(`${apiBase}${path}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -85,6 +103,9 @@ function App() {
   }
 
   async function remove(path) {
+    if (!isLocalMode) {
+      return staticDelete(path)
+    }
     const response = await fetch(`${apiBase}${path}`, { method: 'DELETE' })
     return response.json()
   }
@@ -180,8 +201,9 @@ function App() {
   }
 
   async function fetchNewQuote() {
-    const response = await fetch(`${apiBase}/quote`)
-    const payload = await response.json()
+    const payload = isLocalMode
+      ? await fetch(`${apiBase}/quote`).then((response) => response.json())
+      : await staticQuote()
     setMessage(`Quote updated from ${payload.source}.`)
     loadState()
   }
@@ -205,8 +227,9 @@ function App() {
       setMessage('Type something to search.')
       return
     }
-    const response = await fetch(`${apiBase}/search?q=${encodeURIComponent(draft.searchQuery.trim())}`)
-    const payload = await response.json()
+    const payload = isLocalMode
+      ? await fetch(`${apiBase}/search?q=${encodeURIComponent(draft.searchQuery.trim())}`).then((response) => response.json())
+      : await staticSearch(draft.searchQuery.trim())
     setSearchResult(payload)
     setSelectedSource(null)
     setSourceSummary(null)
